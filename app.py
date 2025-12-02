@@ -203,9 +203,21 @@ with m3:
     st.metric("Potensi Profit", f"${preview['Est. Profit ($)']:,.2f}", "Jika kena TP", delta_color="normal")
 with m4:
     # Logic Warna Likuidasi
-    dist_liq = abs(preview['Liq Price'] - entry_input) / entry_input * 100
-    liq_color = "normal" if dist_liq > 50 else "off" if dist_liq > 20 else "inverse"
-    st.metric("Harga Likuidasi", f"${preview['Liq Price']:,.4f}", f"Jarak {dist_liq:.1f}%", delta_color=liq_color)
+    # Jika entry 0, hindari error pembagian
+    if entry_input > 0:
+        dist_liq = abs(preview['Liq Price'] - entry_input) / entry_input * 100
+        
+        # Tentukan Warna
+        if preview['Liq Price'] <= 0:
+            liq_color = "normal" # Hijau (Sangat Aman / 0)
+            liq_text = "$0.00 (Safe)"
+        else:
+            liq_color = "normal" if dist_liq > 50 else "off" if dist_liq > 20 else "inverse"
+            liq_text = f"${preview['Liq Price']:,.4f}"
+            
+        st.metric("Harga Likuidasi", liq_text, f"Jarak {dist_liq:.1f}%", delta_color=liq_color)
+    else:
+        st.metric("Harga Likuidasi", "-", "Input Entry Dulu")
 
 # --- BAGIAN B: STATISTIK PORTFOLIO (AGREGAT) ---
 if len(st.session_state['portfolio']) > 0:
