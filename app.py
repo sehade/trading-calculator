@@ -3,253 +3,258 @@ import pandas as pd
 from datetime import datetime
 import io
 
-# --- 1. KONFIGURASI HALAMAN & TEMA MODERN ---
+# ==========================================
+# 1. KONFIGURASI TAMPILAN & CSS
+# ==========================================
 st.set_page_config(
-    page_title="Pro Trader Dashboard",
-    page_icon="⚡",
+    page_title="Pro Trading Journal V2",
+    page_icon="🚀",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 2. CSS CUSTOM (MODERN DARK UI) ---
+# Custom CSS untuk tampilan "Dark Mode Professional"
 st.markdown("""
 <style>
-    /* Styling Container Utama */
-    .main {
-        background-color: #0e1117;
-    }
-    /* Card Style untuk Metrics */
+    /* Background Utama */
+    .main { background-color: #0e1117; }
+    
+    /* Kartu Statistik (Metrics) */
     div[data-testid="stMetric"] {
         background-color: #262730;
         border: 1px solid #41424C;
         padding: 15px;
         border-radius: 10px;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
-    /* Judul font */
-    h1, h2, h3 {
-        font-family: 'Segoe UI', sans-serif;
-        font-weight: 600;
-    }
-    /* Tabel Modern */
-    div[data-testid="stDataFrame"] {
-        border: 1px solid #41424C;
-        border-radius: 10px;
-    }
-    /* Tombol Primary (Tambah) */
+    
+    /* Tombol Tambah (Hijau Neon) */
     div.stButton > button:first-child {
         background-color: #00CC96;
         color: white;
         border-radius: 8px;
         font-weight: bold;
         border: none;
-        padding: 0.5rem 1rem;
+        padding: 0.6rem;
         width: 100%;
+        transition: all 0.3s;
     }
     div.stButton > button:hover {
         background-color: #00a87d;
-        border: none;
-        color: white;
+        transform: scale(1.02);
     }
-    /* Custom Progress Bar Colors */
+    
+    /* Progress Bar Custom */
     .stProgress > div > div > div > div {
         background-color: #00CC96;
     }
+    
+    /* Font Judul */
+    h1, h2, h3 { font-family: 'Segoe UI', sans-serif; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. SESSION STATE (DATABASE SEMENTARA) ---
+# ==========================================
+# 2. DATABASE SEMENTARA (SESSION STATE)
+# ==========================================
 if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = []
 
-# --- 4. ENGINE PERHITUNGAN (BACKEND) ---
-def calculate_trade(margin_mode, total_equity, pos_type, margin, lev, entry, tp, sl, fee_pct, fund_rate, days):
-    # Hitung Size
+# ==========================================
+# 3. MESIN PERHITUNGAN (BACKEND LOGIC)
+# ==========================================
+def calculate_trade(coin, status, margin_mode, total_equity, pos_type, margin, lev, entry, tp, sl, fee_pct, fund_rate, days):
+    # --- A. Hitung Dasar ---
     pos_size = margin * lev
     qty = pos_size / entry
     
-    # Hitung Fee (Trading + Funding)
+    # --- B. Hitung Biaya (Fee) ---
+    # Trading Fee (Dibayar saat Close) + Funding Fee (Biaya Inap)
     trade_fee = pos_size * (fee_pct / 100)
     fund_fee = pos_size * (fund_rate / 100) * days
     total_fee = trade_fee + fund_fee
     
-    # Hitung Likuidasi & PnL
-    # Logika Cross vs Isolated
+    # --- C. Logika Likuidasi (Jantung Aplikasi) ---
     if margin_mode == "Isolated Margin":
+        # Iso: Hanya Margin yang dipertaruhkan
         risk_capital = margin
-    else: # Cross Margin
-        # Estimasi konservatif: Saldo dikurangi fee dulu
+    else: 
+        # Cross: Total Saldo Aset yang dipertaruhkan (dikurangi fee estimasi)
         risk_capital = total_equity - total_fee 
         
-    buffer = risk_capital / qty
+    buffer = risk_capital / qty # Jarak harga toleransi
     
     if "Long" in pos_type:
-        liq = max(0, entry - buffer)
-        pnl_gross = (tp - entry) * qty
-        # Jika SL 0, dianggap hold sampai likuidasi (max loss = risk capital)
-        sl_loss_gross = (sl - entry) * qty if sl > 0 else -risk_capital
+        liq_price = max(0, entry - buffer)
+        # PnL Gross (Belum potong fee)
+        gross_pnl_tp = (tp - entry) * qty
+        gross_pnl_sl = (sl - entry) * qty if sl > 0 else -risk_capital
     else: # Short
-        liq = entry + buffer
-        pnl_gross = (entry - tp) * qty
-        sl_loss_gross = (entry - sl) * qty if sl > 0 else -risk_capital
+        liq_price = entry + buffer
+        gross_pnl_tp = (entry - tp) * qty
+        gross_pnl_sl = (entry - sl) * qty if sl > 0 else -risk_capital
 
-    net_profit = pnl_gross - total_fee
-    net_loss = sl_loss_gross - total_fee
+    # --- D. PnL Bersih (Net) ---
+    net_profit_tp = gross_pnl_tp - total_fee
+    net_loss_sl = gross_pnl_sl - total_fee
     
+    # Return Data Dictionary (Format Baris Excel)
     return {
-        "Waktu": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "Waktu Input": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "Pair/Coin": coin.upper(),
+        "Status": status,
+        "Arah": pos_type,
         "Mode": margin_mode,
-        "Posisi": pos_type,
         "Margin ($)": margin,
         "Lev (x)": lev,
         "Entry": entry,
         "TP": tp,
         "SL": sl,
-        "Liq Price": liq,
-        "Fee ($)": total_fee,
-        "Profit ($)": net_profit,
-        "Risk/Loss ($)": net_loss
+        "Liq Price": liq_price,
+        "Fee Total ($)": total_fee,
+        "Est. Profit ($)": net_profit_tp,
+        "Est. Loss/Risk ($)": net_loss_sl
     }
 
-# --- 5. SIDEBAR (INPUT PANEL) ---
+# ==========================================
+# 4. SIDEBAR (PANEL INPUT)
+# ==========================================
 with st.sidebar:
-    st.title("🎛️ Trade Control")
-    st.markdown("---")
+    st.title("🎛️ Input Jurnal")
     
-    # A. Akun
-    st.markdown("### 1. Info Dompet")
+    # 1. INFO AKUN
+    st.caption("--- 1. Info Dompet & Akun ---")
+    total_equity = st.number_input("Total Saldo Aset (USDT)", value=1000.0, step=100.0)
     margin_mode = st.selectbox("Mode Margin", ["Isolated Margin", "Cross Margin"])
-    total_equity = st.number_input("Saldo Aset (USDT)", value=1000.0, step=50.0)
 
-    # B. Posisi
-    st.markdown("### 2. Setup Posisi")
-    pos_type = st.radio("Arah", ["Long (Buy) 🟢", "Short (Sell) 🔴"], horizontal=True, label_visibility="collapsed")
+    # 2. IDENTITAS TRADE (FITUR BARU)
+    st.caption("--- 2. Identitas Trade ---")
+    coin_name = st.text_input("Nama Coin / Pair", value="BTC/USDT", placeholder="Contoh: PEPE, SOL")
+    trade_status = st.selectbox(
+        "Status Trade", 
+        ["🟢 Running (Open)", "🚀 Hit TP (Floating)", "⚠️ Hit SL (Floating)", "🏁 Closed (Selesai)"],
+        help="Pilih status saat ini untuk pencatatan."
+    )
+
+    # 3. SETUP POSISI
+    st.caption("--- 3. Setup Posisi ---")
+    pos_type = st.radio("Arah Market", ["Long (Buy) 🟢", "Short (Sell) 🔴"], horizontal=True, label_visibility="collapsed")
     
     c1, c2 = st.columns(2)
     with c1: margin_input = st.number_input("Margin ($)", value=10.0, min_value=1.0)
-    with c2: lev_input = st.number_input("Lev (x)", value=20, min_value=1, max_value=250)
-    
-    entry_input = st.number_input("Harga Entry", value=50000.0, format="%.4f", min_value=0.0001)
-    
+    with c2: lev_input = st.number_input("Leverage (x)", value=20, min_value=1, max_value=250)
+
+    # 4. HARGA
+    st.caption("--- 4. Titik Harga ---")
+    entry_input = st.number_input("Entry Price", value=50000.0, format="%.6f")
     c3, c4 = st.columns(2)
-    with c3: tp_input = st.number_input("Target (TP)", value=52000.0, format="%.4f")
-    with c4: sl_input = st.number_input("Stop Loss", value=49000.0, format="%.4f", help="0 = Tanpa SL")
+    with c3: tp_input = st.number_input("Target (TP)", value=55000.0, format="%.6f")
+    with c4: sl_input = st.number_input("Stop Loss (SL)", value=48000.0, format="%.6f", help="0 = Tanpa SL")
 
-    # C. Fee
-    with st.expander("⚙️ Setting Biaya (Fee)"):
-        fee_pct = st.number_input("Fee Trading (%)", value=0.045, step=0.001, format="%.3f")
-        fund_rate = st.number_input("Funding/Hari (%)", value=0.010, step=0.001, format="%.3f")
-        days = st.number_input("Hold (Hari)", value=0, min_value=0)
+    # 5. BIAYA
+    with st.expander("⚙️ Atur Fee & Funding"):
+        fee_pct = st.number_input("Fee Trading (%)", value=0.045, step=0.001, format="%.4f")
+        fund_rate = st.number_input("Funding Rate/Hari (%)", value=0.010, step=0.001, format="%.3f")
+        days_hold = st.number_input("Estimasi Hold (Hari)", value=0, min_value=0)
 
-    # D. Tombol Eksekusi
+    # TOMBOL EKSEKUSI
     st.markdown("---")
     if st.button("➕ Tambah ke Portfolio"):
         if entry_input > 0:
-            res = calculate_trade(margin_mode, total_equity, pos_type, margin_input, lev_input, entry_input, tp_input, sl_input, fee_pct, fund_rate, days)
+            # Panggil fungsi hitung
+            res = calculate_trade(coin_name, trade_status, margin_mode, total_equity, pos_type, margin_input, lev_input, entry_input, tp_input, sl_input, fee_pct, fund_rate, days_hold)
+            # Simpan ke session state
             st.session_state['portfolio'].append(res)
-            st.success("Posisi berhasil ditambahkan!")
+            st.toast(f"Sukses! {coin_name} ditambahkan.", icon="✅")
         else:
-            st.error("Harga Entry tidak boleh 0")
+            st.error("Harga Entry tidak boleh 0!")
 
-    if st.button("🗑️ Reset Data"):
+    if st.button("🗑️ Reset Jurnal"):
         st.session_state['portfolio'] = []
         st.rerun()
 
-# --- 6. DASHBOARD UTAMA (UI MODERN) ---
+# ==========================================
+# 5. DASHBOARD UTAMA
+# ==========================================
 
-# Header Area
-col_h1, col_h2 = st.columns([3, 1])
-with col_h1:
-    st.title("⚡ Pro Trader Dashboard")
-    st.caption(f"Saldo Aset: ${total_equity:,.2f} | Mode Aktif: **{margin_mode}**")
-with col_h2:
-    # Menampilkan Jam Server
-    st.metric("Waktu Server", datetime.now().strftime("%H:%M"))
+# Header
+c_head1, c_head2 = st.columns([3, 1])
+with c_head1:
+    st.title("🚀 Pro Trader Journal")
+    st.caption(f"Saldo Aset: **${total_equity:,.2f}** | Mode: **{margin_mode}**")
+with c_head2:
+    st.metric("Jam Server", datetime.now().strftime("%H:%M"))
 
 st.markdown("---")
 
-# === BAGIAN 1: STATISTIK REAL-TIME (PREVIEW) ===
+# --- BAGIAN A: ANALISIS REAL-TIME (PREVIEW) ---
 st.subheader("🔍 Analisis Live (Preview)")
+st.info("Angka di bawah ini berubah sesuai input yang Anda ketik di Sidebar.")
 
-# Hitung preview trade yang sedang diketik user (tanpa simpan)
-preview = calculate_trade(margin_mode, total_equity, pos_type, margin_input, lev_input, entry_input, tp_input, sl_input, fee_pct, fund_rate, days)
+# Hitung preview tanpa simpan
+preview = calculate_trade(coin_name, trade_status, margin_mode, total_equity, pos_type, margin_input, lev_input, entry_input, tp_input, sl_input, fee_pct, fund_rate, days_hold)
 
-# Tampilkan dalam 4 Kartu Metrik
 m1, m2, m3, m4 = st.columns(4)
 with m1:
     st.metric("Modal (Margin)", f"${preview['Margin ($)']:,.2f}", f"{lev_input}x Lev")
 with m2:
-    st.metric("Estimasi Fee", f"-${preview['Fee ($)']:,.2f}", "Trading + Inap", delta_color="inverse")
+    st.metric("Total Biaya", f"-${preview['Fee Total ($)']:,.2f}", "Trading + Inap", delta_color="inverse")
 with m3:
-    st.metric("Potensi Profit", f"${preview['Profit ($)']:,.2f}", "Jika kena TP", delta_color="normal")
+    st.metric("Potensi Profit", f"${preview['Est. Profit ($)']:,.2f}", "Jika kena TP", delta_color="normal")
 with m4:
-    # Logic warna Likuidasi
-    liq_dist = abs(preview['Liq Price'] - entry_input) / entry_input * 100
-    if liq_dist > 50:
-        liq_color = "normal" # Hijau (Aman)
-    elif liq_dist > 20:
-        liq_color = "off"    # Abu (Warning)
-    else:
-        liq_color = "inverse" # Merah (Bahaya)
-        
-    st.metric("Likuidasi", f"${preview['Liq Price']:,.2f}", f"Jarak {liq_dist:.1f}%", delta_color=liq_color)
+    # Logic Warna Likuidasi
+    dist_liq = abs(preview['Liq Price'] - entry_input) / entry_input * 100
+    liq_color = "normal" if dist_liq > 50 else "off" if dist_liq > 20 else "inverse"
+    st.metric("Harga Likuidasi", f"${preview['Liq Price']:,.4f}", f"Jarak {dist_liq:.1f}%", delta_color=liq_color)
 
-# === BAGIAN 2: STATISTIK PORTFOLIO (AGREGAT) ===
+# --- BAGIAN B: STATISTIK PORTFOLIO (AGREGAT) ---
 if len(st.session_state['portfolio']) > 0:
     st.markdown("---")
-    st.subheader("📈 Statistik Portfolio Global")
+    st.subheader("📈 Statistik Portfolio")
     
+    # Convert list ke DataFrame
     df = pd.DataFrame(st.session_state['portfolio'])
     
-    # Hitung Agregat Data
-    total_margin_used = df['Margin ($)'].sum()
-    total_pot_profit = df['Profit ($)'].sum()
-    total_risk = df['Risk/Loss ($)'].sum()
-    margin_usage_pct = (total_margin_used / total_equity) * 100
+    # Hitung Agregat
+    total_margin = df['Margin ($)'].sum()
+    total_profit_pot = df['Est. Profit ($)'].sum()
+    usage_pct = (total_margin / total_equity) * 100
     
-    # --- HEALTH BAR (Money Management) ---
+    # --- HEALTH BAR (MONEY MANAGEMENT) ---
     st.markdown("##### Indikator Kesehatan Modal")
     
-    # Tentukan warna bar berdasarkan risiko
-    if margin_usage_pct < 5:
-        bar_color = "#00CC96" # Hijau
-        status_msg = "AMAN (Conservative)"
-    elif margin_usage_pct < 20:
-        bar_color = "#FFAA00" # Kuning
-        status_msg = "HATI-HATI (Moderate)"
+    # Tentukan warna
+    if usage_pct < 5:
+        bar_color, msg = "#00CC96", "AMAN (Conservative)"
+    elif usage_pct < 20:
+        bar_color, msg = "#FFAA00", "MODERATE (Aggressive)"
     else:
-        bar_color = "#FF4B4B" # Merah
-        status_msg = "BAHAYA (Overtrade)"
-
-    # HTML Progress Bar Custom
+        bar_color, msg = "#FF4B4B", "BAHAYA (Overtrade)"
+        
     st.markdown(f"""
         <div style="background-color: #262730; border-radius: 5px; margin-bottom: 5px;">
-            <div style="width: {min(margin_usage_pct, 100)}%; background-color: {bar_color}; height: 25px; border-radius: 5px; text-align: center; color: white; font-weight: bold; line-height: 25px;">
-                {margin_usage_pct:.2f}%
+            <div style="width: {min(usage_pct, 100)}%; background-color: {bar_color}; height: 25px; border-radius: 5px; text-align: center; color: white; font-weight: bold; line-height: 25px;">
+                {usage_pct:.2f}%
             </div>
         </div>
-        <div style="display: flex; justify-content: space-between; font-size: 0.9em; color: #aaa;">
-            <span>Terpakai: <b>${total_margin_used:,.2f}</b></span>
-            <span>Status: <b style="color:{bar_color}">{status_msg}</b></span>
-            <span>Sisa Saldo: <b>${total_equity - total_margin_used:,.2f}</b></span>
+        <div style="font-size: 0.9em; color: #aaa; display: flex; justify-content: space-between;">
+            <span>Terpakai: <b>${total_margin:,.2f}</b></span>
+            <span>Status: <b style="color:{bar_color}">{msg}</b></span>
         </div>
     """, unsafe_allow_html=True)
-
-    # Statistik Row
+    
+    # Statistik Grid
     st.markdown("####")
     row1, row2, row3 = st.columns(3)
-    with row1:
-        st.metric("Total Posisi Aktif", len(df), "Trade Open")
-    with row2:
-        st.metric("Total Potensi Cuan", f"${total_pot_profit:,.2f}", "Agregat TP")
-    with row3:
-        st.metric("Total Risiko Max", f"${total_risk:,.2f}", "Agregat SL/Liq", delta_color="inverse")
+    with row1: st.metric("Total Posisi", len(df), "Trade Open")
+    with row2: st.metric("Total Potensi Cuan", f"${total_profit_pot:,.2f}", "Agregat TP")
+    with row3: st.metric("Sisa Saldo Aset", f"${total_equity - total_margin:,.2f}", "Available")
 
-    # === BAGIAN 3: JURNAL TRADING (TABEL) ===
+    # --- BAGIAN C: TABEL JURNAL ---
     st.markdown("---")
-    st.subheader("📋 Jurnal Trading")
+    st.subheader("📋 Daftar Riwayat Trade")
     
-    # Format Tampilan Tabel
+    # Tampilkan tabel
     st.dataframe(
         df.style.format({
             "Margin ($)": "${:,.2f}",
@@ -257,30 +262,32 @@ if len(st.session_state['portfolio']) > 0:
             "TP": "{:,.4f}",
             "SL": "{:,.4f}",
             "Liq Price": "{:,.4f}",
-            "Fee ($)": "${:,.2f}",
-            "Profit ($)": "${:,.2f}",
-            "Risk/Loss ($)": "${:,.2f}",
+            "Fee Total ($)": "${:,.2f}",
+            "Est. Profit ($)": "${:,.2f}",
+            "Est. Loss/Risk ($)": "${:,.2f}"
         }),
         use_container_width=True,
         height=300
     )
     
-    # === BAGIAN 4: EXPORT EXCEL ===
+    # --- BAGIAN D: EXPORT EXCEL ---
+    st.markdown("### 📥 Download Laporan")
+    
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Trade Log')
+        df.to_excel(writer, index=False, sheet_name='Jurnal Trading')
         
     col_dl1, col_dl2 = st.columns([1, 3])
     with col_dl1:
         st.download_button(
-            label="📥 Download Laporan Excel",
+            label="Download Excel (.xlsx)",
             data=buffer.getvalue(),
-            file_name=f"Trade_Journal_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            file_name=f"Trading_Journal_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
 
 else:
-    # Tampilan Kosong (Placeholder)
+    # Tampilan jika kosong
     st.markdown("---")
-    st.info("👋 Portfolio Kosong. Masukkan setup trade di sidebar kiri lalu klik 'Tambah ke Portfolio' untuk memulai.")
+    st.info("👋 Portfolio Kosong. Masukkan setup trade di sidebar kiri lalu klik 'Tambah ke Portfolio'.")
