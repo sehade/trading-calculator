@@ -11,9 +11,12 @@ st.set_page_config(
 # --- 2. CSS CUSTOM (Mempercantik Tampilan) ---
 st.markdown("""
 <style>
-    .big-font { font-size:20px !important; font-weight: bold; }
-    .stMetric { background-color: #f0f2f6; padding: 10px; border-radius: 10px; }
-    div[data-testid="stExpander"] div[role="button"] p { font-size: 1.1rem; font-weight: 600; }
+    /* Membuat tulisan di expander lebih tebal */
+    div[data-testid="stExpander"] div[role="button"] p { 
+        font-size: 1.1rem; 
+        font-weight: 600; 
+    }
+    /* Menghapus background paksa pada stMetric agar adaptif dengan Dark Mode */
 </style>
 """, unsafe_allow_html=True)
 
