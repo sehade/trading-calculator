@@ -1,197 +1,191 @@
 import streamlit as st
 
-# --- KONFIGURASI HALAMAN ---
+# --- 1. KONFIGURASI HALAMAN (Harus di paling atas) ---
 st.set_page_config(
     page_title="Kalkulator Trading Pro",
     page_icon="📈",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# --- JUDUL UTAMA ---
-st.title("📈 Kalkulator Trading & Manajemen Risiko")
-st.markdown("---")
+# --- 2. CSS CUSTOM (Mempercantik Tampilan) ---
+st.markdown("""
+<style>
+    .big-font { font-size:20px !important; font-weight: bold; }
+    .stMetric { background-color: #f0f2f6; padding: 10px; border-radius: 10px; }
+    div[data-testid="stExpander"] div[role="button"] p { font-size: 1.1rem; font-weight: 600; }
+</style>
+""", unsafe_allow_html=True)
 
-# --- SIDEBAR (INPUT USER) ---
+# --- 3. SIDEBAR (INPUT DATA) ---
 with st.sidebar:
-    st.header("⚙️ Konfigurasi Trade")
+    st.title("🎛️ Panel Kontrol")
     
-    # 1. Tipe Posisi
-    position_type = st.radio("Tipe Posisi", ["Long (Buy)", "Short (Sell)"], horizontal=True)
-    
-    # 2. Margin & Leverage
-    col1, col2 = st.columns(2)
-    with col1:
-        margin = st.number_input("Margin (USDT)", min_value=1.0, value=100.0, step=10.0)
-    with col2:
-        leverage = st.number_input("Leverage (x)", min_value=1, max_value=250, value=10, step=1)
-        
-    # 3. Harga (Price Inputs)
-    st.subheader("Titik Harga")
-    entry_price = st.number_input("Harga Entry (Masuk)", min_value=0.000001, value=50000.0, format="%.6f")
-    
-    # Target & Stop Loss
-    col3, col4 = st.columns(2)
-    with col3:
-        target_price = st.number_input("Target Price (TP)", min_value=0.0, value=55000.0, format="%.6f")
-    with col4:
-        stop_loss = st.number_input("Stop Loss (SL)", min_value=0.0, value=48000.0, format="%.6f")
-        
-    # 4. Pengaturan Biaya (Fee & Funding)
-    st.subheader("💰 Pengaturan Biaya")
-    
-    # Biaya Trading (Handling Fee)
-    fee_percent = st.number_input(
-        "Tingkat Biaya Trading (%)", 
-        min_value=0.0, 
-        value=0.045, 
-        step=0.001, 
-        format="%.4f",
-        help="Sesuai aturan: Biaya = Margin * Lev * Rate. Gratis saat open, bayar saat close."
+    # Section A: Saldo
+    st.markdown("### 1. Informasi Modal")
+    total_equity = st.number_input(
+        "Total Saldo Aset (USDT)", 
+        min_value=1.0, value=1000.0, step=100.0,
+        help="Total uang di wallet sebelum trade."
     )
-    
-    st.caption("--- Biaya Inap (Funding) ---")
-    
-    # Biaya Inap (Funding Fee)
-    col_fund1, col_fund2 = st.columns(2)
-    with col_fund1:
-        funding_rate = st.number_input(
-            "Rate/Hari (%)", 
-            min_value=0.0, 
-            value=0.0, 
-            step=0.01, 
-            help="Biaya inap per hari dalam persen. Kosongkan jika intraday (0 hari)."
-        )
-    with col_fund2:
-        holding_days = st.number_input(
-            "Lama Hold (Hari)", 
-            min_value=0, 
-            value=0, 
-            step=1,
-            help="Berapa hari posisi dibiarkan terbuka."
-        )
 
-# --- LOGIKA PERHITUNGAN (BACKEND) ---
+    # Section B: Setup Trade
+    st.markdown("### 2. Setup Posisi")
+    position_type = st.radio("Arah Market", ["Long (Buy) 🟢", "Short (Sell) 🔴"], horizontal=True)
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        margin = st.number_input("Margin (USDT)", min_value=1.0, value=10.0, step=10.0)
+    with c2:
+        leverage = st.number_input("Leverage (x)", min_value=1, max_value=250, value=10)
+
+    # Section C: Harga
+    st.markdown("### 3. Entry & Exit")
+    entry_price = st.number_input("Harga Entry", min_value=0.000001, value=50000.0, format="%.6f")
+    
+    c3, c4 = st.columns(2)
+    with c3:
+        target_price = st.number_input("Target (TP)", value=55000.0, format="%.6f")
+    with c4:
+        stop_loss = st.number_input("Stop Loss (SL)", value=48000.0, format="%.6f", help="Isi 0 jika tanpa SL")
+
+    # Section D: Biaya (Fee)
+    st.markdown("### 4. Potongan Biaya")
+    with st.expander("⚙️ Atur Fee & Funding"):
+        fee_percent = st.number_input("Fee Trading (%)", value=0.045, step=0.001, format="%.4f")
+        st.caption("Biaya Inap (Funding):")
+        funding_rate = st.number_input("Rate/Hari (%)", value=0.01, step=0.01)
+        holding_days = st.number_input("Lama Hold (Hari)", value=0, step=1)
+
+# --- 4. LOGIKA UTAMA (BACKEND) ---
 if entry_price > 0:
-    # A. Dasar Perhitungan
-    position_size = margin * leverage # Total nilai posisi (Notional Value)
-    quantity = position_size / entry_price # Jumlah koin/aset yang didapat
+    # --- HITUNG SIZE & FEE ---
+    position_size = margin * leverage 
+    quantity = position_size / entry_price 
     
-    # B. Hitung Biaya (Fee Logic Update)
-    
-    # 1. Biaya Trading (Handling Fee)
-    # Sesuai gambar: Rumus = Margin * Leverage * Rate
-    # Dan hanya dibebankan sekali (saat tutup).
+    # Hitung Fee sesuai request (Trading Fee hanya saat close + Funding Fee)
     trading_fee = position_size * (fee_percent / 100)
-    
-    # 2. Biaya Pendanaan (Funding Fee / Biaya Inap)
-    # Rumus = Position Size * Rate Harian * Jumlah Hari
     funding_fee = position_size * (funding_rate / 100) * holding_days
-    
-    # 3. Total Biaya
     total_fee = trading_fee + funding_fee
     
-    # C. Perhitungan PnL (Profit and Loss)
-    if position_type == "Long (Buy)":
-        # Rumus Long: (Harga Jual - Harga Beli) * Jumlah Koin
-        gross_pnl = (target_price - entry_price) * quantity
-        sl_loss = (stop_loss - entry_price) * quantity
+    # --- HITUNG PNL & LIKUIDASI ---
+    if "Long" in position_type:
+        gross_pnl_tp = (target_price - entry_price) * quantity
+        # Jika SL 0, rugi maksimal adalah Margin (Likuidasi)
+        gross_pnl_sl = (stop_loss - entry_price) * quantity if stop_loss > 0 else -margin
+        liq_price = entry_price - (entry_price / leverage)
         
-        # Likuidasi Long: Entry - (Entry / Leverage)
-        liq_price = entry_price - (entry_price / leverage) 
+        # Jarak aman SL
+        is_sl_safe = stop_loss > liq_price if stop_loss > 0 else False
         
-        # Break Even Point (BEP)
-        # Harga harus naik sekian untuk menutup Total Fee (Trading + Funding)
-        fee_cost_per_unit = total_fee / quantity
-        bep_price = entry_price + fee_cost_per_unit
-
-    else: # Short (Sell)
-        # Rumus Short: (Harga Masuk - Harga Keluar) * Jumlah Koin
-        gross_pnl = (entry_price - target_price) * quantity
-        sl_loss = (entry_price - stop_loss) * quantity
-        
-        # Likuidasi Short: Entry + (Entry / Leverage)
+    else: # Short
+        gross_pnl_tp = (entry_price - target_price) * quantity
+        gross_pnl_sl = (entry_price - stop_loss) * quantity if stop_loss > 0 else -margin
         liq_price = entry_price + (entry_price / leverage)
         
-        # Break Even Point (BEP) Short
-        fee_cost_per_unit = total_fee / quantity
-        bep_price = entry_price - fee_cost_per_unit
+        # Jarak aman SL
+        is_sl_safe = stop_loss < liq_price if stop_loss > 0 else False
 
-    # Net PnL (Setelah Total Biaya)
-    net_pnl = gross_pnl - total_fee
-    net_roe = (net_pnl / margin) * 100
+    # Net PnL (Potong Fee)
+    net_pnl_tp = gross_pnl_tp - total_fee
+    net_pnl_sl = gross_pnl_sl - total_fee
     
-    net_loss_sl = sl_loss - total_fee
-    net_loss_roe = (net_loss_sl / margin) * 100
+    # ROE %
+    roe_tp = (net_pnl_tp / margin) * 100
+    roe_sl = (net_pnl_sl / margin) * 100
 
-    # Risk Reward Ratio
+    # Risk Reward Logic
     dist_reward = abs(target_price - entry_price)
-    dist_risk = abs(entry_price - stop_loss)
-    
-    if dist_risk > 0:
-        rr_ratio = dist_reward / dist_risk
-    else:
-        rr_ratio = 0
+    dist_risk = abs(entry_price - stop_loss) if stop_loss > 0 else abs(entry_price - liq_price)
+    rr_ratio = dist_reward / dist_risk if dist_risk > 0 else 0
 
-    # --- TAMPILAN OUTPUT (FRONTEND) ---
+    # Money Management Logic
+    margin_usage_percent = (margin / total_equity) * 100
+    safe_margin_limit = 1.0 # Batas aman 1%
+
+    # --- 5. TAMPILAN UTAMA (FRONTEND) ---
+    st.header(f"📊 Analisis Posisi: {position_type}")
     
-    # 1. Kartu Utama (Metrics)
-    st.subheader("📊 Hasil Simulasi")
+    # [VISUAL 1] MONEY MANAGEMENT BAR
+    st.subheader("🛡️ Kesehatan Modal")
     
-    col_res1, col_res2, col_res3 = st.columns(3)
-    
-    with col_res1:
-        st.metric(label="Modal Awal (Margin)", value=f"${margin:,.2f}")
-    
-    with col_res2:
-        st.metric(
-            label="Estimasi Net Profit (TP)", 
-            value=f"${net_pnl:,.2f}", 
-            delta=f"{net_roe:.2f}% (ROE)",
-            delta_color="normal"
-        )
+    col_risk1, col_risk2 = st.columns([3, 1])
+    with col_risk1:
+        # Progress bar logic
+        risk_val = min(margin_usage_percent / 5, 1.0) # Scale 0-5% (5% = penuh)
         
-    with col_res3:
-        st.metric(
-            label="Total Biaya (Fee + Funding)", 
-            value=f"${total_fee:,.2f}",
-            delta="- Pengurang Profit",
-            delta_color="inverse"
-        )
+        if margin_usage_percent <= 1:
+            bar_color = "green"
+            status_msg = "✅ AMAN (Conservative)"
+        elif margin_usage_percent <= 3:
+            bar_color = "yellow" 
+            status_msg = "⚠️ HATI-HATI (Aggressive)"
+        else:
+            bar_color = "red"
+            status_msg = "🚨 BAHAYA (Gambling)"
+            
+        st.write(f"Penggunaan Modal: **{margin_usage_percent:.2f}%** | Status: **{status_msg}**")
+        st.progress(risk_val) # Streamlit native progress bar
+        
+    with col_risk2:
+        st.metric("Sisa Saldo Aman", f"${total_equity - margin:,.2f}")
 
     st.markdown("---")
 
-    # 2. Rincian Biaya (Fitur Baru)
-    with st.expander("🔍 Lihat Rincian Biaya (Trading + Inap)"):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.write("**Biaya Trading**")
-            st.write(f"${trading_fee:,.2f}")
-            st.caption(f"Rate: {fee_percent}%")
-        with c2:
-            st.write("**Biaya Inap (Funding)**")
-            st.write(f"${funding_fee:,.2f}")
-            st.caption(f"{holding_days} hari @ {funding_rate}%/hari")
-        with c3:
-            st.write("**Total Potongan**")
-            st.write(f"**${total_fee:,.2f}**")
+    # [VISUAL 2] KARTU HASIL (METRICS)
+    st.subheader("💰 Proyeksi Profit & Loss")
+    
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.metric("Modal (Margin)", f"${margin:,.2f}", f"{leverage}x Lev")
+    with m2:
+        st.metric("Fee Exchange", f"-${total_fee:,.2f}", "Trading + Inap", delta_color="inverse")
+    with m3:
+        st.metric("Profit Bersih (TP)", f"${net_pnl_tp:,.2f}", f"{roe_tp:.1f}%", delta_color="normal")
+    with m4:
+        # Logic warna SL
+        sl_val = f"${net_pnl_sl:,.2f}"
+        sl_delta = f"{roe_sl:.1f}%"
+        st.metric("Loss Bersih (SL)", sl_val, sl_delta, delta_color="inverse")
 
-    # 3. Detail Analisis & Risiko
-    col_ana1, col_ana2 = st.columns([1, 1])
+    # [VISUAL 3] SALDO AKHIR
+    st.info(f"""
+    **🔮 Simulasi Rekening:**
+    - Saldo Awal: **${total_equity:,.2f}**
+    - Jika Profit (TP): **${total_equity + net_pnl_tp:,.2f}** 🚀
+    - Jika Rugi (SL): **${total_equity + net_pnl_sl:,.2f}** 🔻
+    """)
 
-    with col_ana1:
-        st.info("ℹ️ **Analisis Posisi**")
-        st.markdown(f"""
-        - **Posisi Size:** ${position_size:,.2f}
-        - **Break Even Point:** ${bep_price:,.2f} (Harga Balik Modal)
-        """)
+    st.markdown("---")
 
-    with col_ana2:
-        st.warning("⚠️ **Analisis Risiko**")
-        st.markdown(f"""
-        - **Harga Likuidasi (Est):** ${liq_price:,.2f}
-        - **Risk to Reward:** 1 : {rr_ratio:.2f}
-        - **Jika Kena SL (Net):** Rugi ${net_loss_sl:,.2f} ({net_loss_roe:.2f}%)
-        """)
+    # [VISUAL 4] DETAIL TEKNIS (KOLOM INFO)
+    c_info1, c_info2 = st.columns(2)
+    
+    with c_info1:
+        st.warning("⚠️ **Zona Bahaya (Likuidasi)**")
+        st.write(f"Harga Likuidasi: **${liq_price:,.2f}**")
+        
+        # Cek Keamanan SL
+        if stop_loss == 0:
+            st.error("⛔ ANDA TIDAK PASANG SL! Modal bisa ludes.")
+        elif not is_sl_safe:
+            st.error(f"❌ SL SALAH POSISI! Anda akan likuidasi (${liq_price:,.2f}) sebelum kena SL.")
+        else:
+            st.success("✅ SL AMAN (Di atas/bawah likuidasi).")
+
+    with c_info2:
+        st.success("🎯 **Rasio Risk & Reward**")
+        st.write(f"Risk : Reward = **1 : {rr_ratio:.2f}**")
+        
+        # Break Even Point
+        # Harga BEP = Entry +/- (Total Fee / Quantity)
+        fee_shift = total_fee / quantity
+        if "Long" in position_type:
+            bep = entry_price + fee_shift
+        else:
+            bep = entry_price - fee_shift
+            
+        st.write(f"Harga Balik Modal (BEP): **${bep:,.2f}**")
 
 else:
-    st.warning("Masukkan Harga Entry lebih dari 0 untuk memulai kalkulasi.")
+    st.info("👈 Silakan masukkan data trade di Sidebar sebelah kiri.")
