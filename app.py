@@ -199,7 +199,7 @@ with st.sidebar:
     
     # A. INFO AKUN
     st.caption("--- Info Akun ---")
-    total_equity = st.number_input("Total Saldo Aset (USDT)", value=1000.0, step=100.0)
+    total_equity = st.number_input("Total Saldo Aset (USDT)", value=1000.0, step=10.0, format="%.6f")
     margin_mode = st.selectbox("Mode Margin", ["Isolated Margin", "Cross Margin"])
 
     # === FITUR: RISK ASSISTANT (PENGINGAT 0.5% - 1%) ===
@@ -275,8 +275,8 @@ with st.sidebar:
         in_trade_fee, in_fund_fee = 0.0, 0.0
     else:
         c_f1, c_f2 = st.columns(2)
-        in_trade_fee = c_f1.number_input("Trading Fee ($)", value=0.0, step=0.1)
-        in_fund_fee = c_f2.number_input("Funding Fee ($)", value=0.0, step=0.1)
+        in_trade_fee = c_f1.number_input("Trading Fee ($)", value=0.0, step=0.0001, format="%.4f")
+        in_fund_fee = c_f2.number_input("Funding Fee ($)", value=0.0, step=0.0001, format="%.4f")
     
     st.markdown("---")
     
@@ -416,8 +416,8 @@ if len(st.session_state['portfolio']) > 0:
             c_f1, c_f2 = st.columns(2)
             v_t_fee = 0.0 if is_fee_locked else float(row['Trading Fee ($)'])
             v_f_fee = 0.0 if is_fee_locked else float(row['Funding Fee ($)'])
-            new_trade_fee = c_f1.number_input("Trading Fee", value=v_t_fee, step=0.1, disabled=is_fee_locked)
-            new_fund_fee = c_f2.number_input("Funding Fee", value=v_f_fee, step=0.1, disabled=is_fee_locked)
+            new_trade_fee = c_f1.number_input("Trading Fee", value=v_t_fee, step=0.0001, format="%.4f", disabled=is_fee_locked)
+            new_fund_fee = c_f2.number_input("Funding Fee", value=v_f_fee, step=0.0001, format="%.4f", disabled=is_fee_locked)
             
             # 4. TARGET
             st.markdown("##### 🎯 Target")
