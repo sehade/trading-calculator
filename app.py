@@ -296,9 +296,6 @@ with st.sidebar:
 # ==============================================================================
 # 5. DASHBOARD UTAMA
 # ==============================================================================
-# ==========================================
-# 5. DASHBOARD UTAMA
-# ==========================================
 c_head1, c_head2 = st.columns([3, 1])
 with c_head1:
     st.title("💎 Sehalized App") # Judul Pilihan Anda
@@ -335,8 +332,8 @@ if len(st.session_state['portfolio']) > 0:
     st.markdown("---")
     st.subheader("📋 Tabel Monitoring")
     
-    df['Buka'] = df['Start Time'].dt.strftime('%d/%m/%Y %H:%M')
-    df['Tutup'] = df['End Time'].dt.strftime('%d/%m/%Y %H:%M')
+    df['Buka'] = df['Start Time'].dt.strftime('%d/%m/%y | %H:%M')
+    df['Tutup'] = df['End Time'].dt.strftime('%d/%m/%y | %H:%M')
     
     # DAFTAR KOLOM KOMPLIT (TP/SL %, Liq, Fee, Waktu)
     display_cols = [
