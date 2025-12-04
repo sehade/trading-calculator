@@ -8,17 +8,19 @@ import uuid
 # 1. KONFIGURASI HALAMAN & CSS
 # ==========================================
 st.set_page_config(
-    page_title="Ultimate Trading Manager V12",
+    page_title="Ultimate Trading Manager V14",
     page_icon="💎",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# CSS Kustom untuk Tampilan Profesional
 st.markdown("""
 <style>
+    /* Latar Belakang Gelap Utama */
     .main { background-color: #0e1117; }
     
-    /* Kartu Statistik */
+    /* Styling Kartu Statistik (Metrics) */
     div[data-testid="stMetric"] {
         background-color: #262730;
         border: 1px solid #41424C;
@@ -26,24 +28,40 @@ st.markdown("""
         border-radius: 10px;
     }
     
-    /* Form Edit Mobile Friendly */
+    /* Styling Form Edit agar terlihat jelas di HP */
     div[data-testid="stForm"] {
         background-color: #1c1e26;
         padding: 20px;
         border-radius: 10px;
         border: 1px solid #41424C;
+        margin-top: 20px;
     }
     
-    /* Risk Alert Box */
+    /* Risk Alert Box (Kotak Peringatan Risiko) */
     .risk-box {
         padding: 12px;
         border-radius: 8px;
         margin-bottom: 15px;
         font-size: 0.9em;
+        border-left: 5px solid;
     }
-    .risk-safe { background-color: #1f3a2f; color: #00cc96; border: 1px solid #00cc96; }
-    .risk-danger { background-color: #3a1f1f; color: #ff4b4b; border: 1px solid #ff4b4b; }
+    .risk-safe { 
+        background-color: #1f3a2f; 
+        color: #00cc96; 
+        border-color: #00cc96; 
+    }
+    .risk-warning { 
+        background-color: #3a2e1f; 
+        color: #ffaa00; 
+        border-color: #ffaa00; 
+    }
+    .risk-danger { 
+        background-color: #3a1f1f; 
+        color: #ff4b4b; 
+        border-color: #ff4b4b; 
+    }
     
+    /* Font Judul */
     h1, h2, h3 { font-family: 'Segoe UI', sans-serif; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
@@ -55,23 +73,26 @@ if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = []
 
 # ==========================================
-# 3. LOGIKA BACKEND (THE BRAIN V12)
+# 3. LOGIKA BACKEND (THE BRAIN)
 # ==========================================
 
-# --- FITUR BARU V12: Smart Duration (Menit/Jam/Hari) ---
+# --- A. Smart Duration (Menghitung Waktu Nahan Floating) ---
 def calculate_smart_duration(start_dt, end_dt):
+    # Hitung selisih waktu
     diff = end_dt - start_dt
     total_seconds = int(diff.total_seconds())
     
-    if total_seconds < 0: return "Error (Waktu Mundur)", 0
+    if total_seconds < 0: 
+        return "Error (Waktu Mundur)", 0
     
+    # Konversi ke Hari, Jam, Menit
     days = total_seconds // 86400
     rem_seconds = total_seconds % 86400
     hours = rem_seconds // 3600
     rem_seconds %= 3600
     minutes = rem_seconds // 60
     
-    # Logic Tampilan Pintar
+    # Format Teks Dinamis
     parts = []
     if days > 0:
         parts.append(f"{days} Hari")
@@ -80,68 +101,83 @@ def calculate_smart_duration(start_dt, end_dt):
     if minutes > 0:
         parts.append(f"{minutes} Menit")
     
-    # Jika kurang dari 1 menit (baru input)
     if not parts:
         return "Baru Saja", total_seconds
         
     return " ".join(parts), total_seconds
 
-# --- LOGIKA PROSES UTAMA ---
+# --- B. Proses Logika Utama (Calculator) ---
 def process_trade_logic(
     id_trade, start_dt, end_dt, 
     coin, status, margin_mode, total_equity, pos_type, 
     margin, lev, avg_entry, manual_last_price, tp, sl, 
     fee_trading_dollar, fee_funding_dollar
 ):
-    # Validasi Dasar
+    # Validasi Pembagian Nol
     if avg_entry <= 0: return None
     
-    # 1. Hitung Durasi Pintar
+    # 1. Hitung Durasi (Time Engine)
     duration_str, _ = calculate_smart_duration(start_dt, end_dt)
     
-    # 2. Tentukan Last Price (Otomatis Lock jika TP/SL)
+    # 2. Tentukan Last Price (Status Engine)
     final_price = manual_last_price
-    if status == "🚀 Hit TP": final_price = tp
-    elif status == "⚠️ Hit SL": final_price = sl
-    
+    if status == "🚀 Hit TP": 
+        final_price = tp # Kunci ke TP
+    elif status == "⚠️ Hit SL": 
+        final_price = sl # Kunci ke SL
+    # Jika Running/Closed, pakai manual_last_price
+        
     is_running = (status == "🟢 Running")
 
-    # 3. Hitung Size & Quantity
+    # 3. Hitung Size & Qty
     pos_size = margin * lev
     qty = pos_size / avg_entry
     
-    # 4. Logika Fee (Dikunci 0 jika Running)
+    # 4. Logika Fee (Locking Engine)
+    # Jika Running, Fee dipaksa 0 karena belum realisasi
     if is_running:
-        real_trade_fee, real_fund_fee = 0.0, 0.0
+        real_trade_fee = 0.0
+        real_fund_fee = 0.0
     else:
-        real_trade_fee, real_fund_fee = fee_trading_dollar, fee_funding_dollar
-    
+        real_trade_fee = fee_trading_dollar
+        real_fund_fee = fee_funding_dollar
+        
     total_fee = real_trade_fee + real_fund_fee
     
-    # 5. Hitung PnL Gross
+    # 5. Hitung PnL (Profit & Loss)
     if "Long" in pos_type:
         pnl_raw = (final_price - avg_entry) * qty
-    else:
+    else: # Short
         pnl_raw = (avg_entry - final_price) * qty
-    
-    # 6. Hitung PnL Net & ROE
+        
     pnl_net = pnl_raw - total_fee
     roe_pct = (pnl_raw / margin) * 100 
 
-    # 7. Format Tampilan PnL (Warna)
+    # 6. Format Tampilan Warna PnL
     pnl_str = f"{roe_pct:.1f}% (${pnl_net:.2f})"
-    pnl_display = f"🟢 +{pnl_str}" if pnl_net >= 0 else f"🔴 {pnl_str}"
-
-    # 8. Split PnL (Floating vs Realized)
-    if is_running:
-        floating_display, realized_display = pnl_display, "-"
-        floating_val, realized_val = pnl_net, 0.0
+    if pnl_net >= 0:
+        pnl_display = f"🟢 +{pnl_str}" 
     else:
-        floating_display, realized_display = "-", pnl_display
-        floating_val, realized_val = 0.0, pnl_net
+        pnl_display = f"🔴 {pnl_str}"
 
-    # 9. Hitung Likuidasi
-    risk_capital = margin if margin_mode == "Isolated Margin" else (total_equity - total_fee)
+    # 7. Split PnL (Floating vs Realized)
+    if is_running:
+        floating_display = pnl_display
+        floating_val = pnl_net
+        realized_display = "-"
+        realized_val = 0.0
+    else:
+        floating_display = "-"
+        floating_val = 0.0
+        realized_display = pnl_display
+        realized_val = pnl_net
+
+    # 8. Hitung Likuidasi (Safety Engine)
+    if margin_mode == "Isolated Margin":
+        risk_capital = margin 
+    else:
+        risk_capital = total_equity - total_fee
+        
     buffer = risk_capital / qty if qty > 0 else 0
     
     if "Long" in pos_type:
@@ -149,7 +185,7 @@ def process_trade_logic(
     else:
         liq_price = avg_entry + buffer
 
-    # 10. FITUR BARU V12: Hitung Persentase TP/SL
+    # 9. Hitung Persentase TP/SL (Fitur Baru V12/V13)
     if "Long" in pos_type:
         tp_pct = ((tp - avg_entry) / avg_entry) * 100
         sl_pct = ((sl - avg_entry) / avg_entry) * 100
@@ -160,11 +196,11 @@ def process_trade_logic(
     tp_display = f"${tp:,.4f} ({tp_pct:+.1f}%)"
     sl_display = f"${sl:,.4f} ({sl_pct:+.1f}%)"
 
-    # RETURN DATA LENGKAP
+    # RETURN DATA COMPLETE
     return {
         "ID": id_trade,
         
-        # Waktu & Durasi
+        # Waktu
         "Start Time": start_dt,
         "End Time": end_dt,
         "Durasi": duration_str,
@@ -181,72 +217,77 @@ def process_trade_logic(
         "Entry": float(avg_entry),
         "Last/Exit": float(final_price),
         
-        # TP & SL (Display Baru V12)
+        # TP/SL dengan Persentase
         "TP_Val": float(tp), 
         "SL_Val": float(sl),
         "TP Display": tp_display,
         "SL Display": sl_display,
         
-        # Keamanan
         "Liq Price": float(liq_price),
         
-        # Fee
+        # Fee Terpisah
         "Trading Fee ($)": float(real_trade_fee),
         "Funding Fee ($)": float(real_fund_fee),
         "Total Fee ($)": float(total_fee),
         
-        # Profit / Loss
+        # PnL Terpisah
         "Floating PnL": floating_display,
         "Realized PnL": realized_display,
         
-        # Hidden Values (Untuk Statistik)
+        # Hidden Values (untuk statistik)
         "_float_val": floating_val,
         "_real_val": realized_val,
         "_is_running": is_running,
     }
 
 # ==========================================
-# 4. SIDEBAR (INPUT DINAMIS)
+# 4. SIDEBAR (INPUT & RISK MANAGEMENT)
 # ==========================================
 with st.sidebar:
     st.title("🎛️ Input Trade Baru")
     
-    # --- A. INFO AKUN ---
+    # A. GLOBAL SETTINGS
     st.caption("--- Info Akun ---")
     total_equity = st.number_input("Total Saldo Aset (USDT)", value=1000.0, step=100.0)
     margin_mode = st.selectbox("Mode Margin", ["Isolated Margin", "Cross Margin"])
 
-    # Risk Alert (0.5% - 1%)
-    safe_max = total_equity * 0.01
-    st.markdown(f"<div style='font-size:0.8em; color:#aaa; margin-bottom:10px;'>Batas Aman (1%): ${safe_max:.2f}</div>", unsafe_allow_html=True)
+    # --- FITUR: SMART RISK ASSISTANT (Wajib Ada) ---
+    st.markdown("---")
+    st.markdown("### 🛡️ Risk Assistant")
+    
+    # Hitung batas aman 0.5% - 1%
+    safe_min = total_equity * 0.005 # 0.5%
+    safe_max = total_equity * 0.01  # 1.0%
+    
+    st.info(f"💡 **Saran Margin Aman (0.5% - 1%):**\n ${safe_min:.2f} — ${safe_max:.2f}")
+    # --------------------------------------------------
 
-    # --- B. IDENTITAS & STATUS ---
-    st.caption("--- Identitas ---")
+    # B. WAKTU (TIME TRACKER)
+    st.caption("--- Waktu Buka Posisi ---")
+    c_t1, c_t2 = st.columns(2)
+    with c_t1: 
+        start_d = st.date_input("Tanggal Buka", value="today")
+    with c_t2: 
+        start_t = st.time_input("Jam Buka", value="now", step=60) # Step 60 = Presisi menit
+    
+    start_dt_combine = datetime.combine(start_d, start_t)
+
+    # C. IDENTITAS
+    st.caption("--- Identitas Trade ---")
     coin_name = st.text_input("Nama Coin", value="BTC/USDT")
     status_input = st.selectbox("Status Awal", ["🟢 Running", "🚀 Hit TP", "⚠️ Hit SL", "🏁 Closed"])
     
-    # --- C. WAKTU (LOGIC DINAMIS V12) ---
-    st.caption("--- Waktu ---")
-    
-    # Input Waktu Buka
-    c_t1, c_t2 = st.columns(2)
-    start_d = c_t1.date_input("Tgl Buka", value="today")
-    start_t = c_t2.time_input("Jam Buka", value="now", step=60) # Step 60 = Presisi Menit
-    start_dt_combine = datetime.combine(start_d, start_t)
-
-    # Logic Hide/Show End Time
+    # Logic Waktu Tutup (Sembunyi jika Running)
     if status_input == "🟢 Running":
-        # Jika Running, End Time otomatis 'Sekarang' (Real-time)
-        end_dt_combine = datetime.now()
-        st.info("🕒 Posisi Running: Waktu Tutup = Real-time")
+        end_dt_combine = datetime.now() # Real-time
+        st.info("🕒 Posisi Running: Waktu Tutup = Sekarang")
     else:
-        # Jika Selesai, User input Waktu Tutup
         c_t3, c_t4 = st.columns(2)
-        end_d = c_t3.date_input("Tgl Tutup", value="today")
+        end_d = c_t3.date_input("Tanggal Tutup", value="today")
         end_t = c_t4.time_input("Jam Tutup", value="now", step=60)
         end_dt_combine = datetime.combine(end_d, end_t)
 
-    # --- D. SETUP POSISI ---
+    # D. SETUP POSISI (DENGAN ALERT RISK MERAH/HIJAU)
     st.caption("--- Setup Posisi ---")
     pos_type = st.radio("Arah", ["Long 🟢", "Short 🔴"], horizontal=True)
     
@@ -254,9 +295,27 @@ with st.sidebar:
     margin_in = c1.number_input("Margin ($)", value=10.0, step=1.0)
     lev_in = c2.number_input("Lev (x)", value=20)
     
-    # Margin Warning
+    # >>> LOGIKA ALERT MARGIN VISUAL <<<
     if margin_in > safe_max:
-        st.markdown(f"<div class='risk-box risk-danger'>⚠️ BAHAYA! Margin > ${safe_max:.2f}</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='risk-box risk-danger'>🚨 <b>OVERTRADE WARNING!</b><br>"
+            f"Margin Anda (${margin_in}) melebihi 1% saldo (${safe_max:.2f}).<br>"
+            f"Risiko kebangkrutan tinggi!</div>", 
+            unsafe_allow_html=True
+        )
+    elif margin_in > safe_min:
+        st.markdown(
+            f"<div class='risk-box risk-warning'>⚠️ <b>MODERATE RISK</b><br>"
+            f"Margin > 0.5%. Masih batas wajar tapi hati-hati.</div>", 
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            f"<div class='risk-box risk-safe'>✅ <b>SAFE ZONE</b><br>"
+            f"Margin sangat aman (< 0.5%).</div>", 
+            unsafe_allow_html=True
+        )
+    # ----------------------------------
     
     entry_in = st.number_input("Avg Entry", value=50000.0, format="%.4f")
     
@@ -267,16 +326,16 @@ with st.sidebar:
     if status_input in ["🟢 Running", "🏁 Closed"]:
         last_price_in = st.number_input(f"{last_price_label}", value=50000.0, format="%.4f")
     else:
-        last_price_in = entry_in # Placeholder, nanti ditimpa logic backend
+        last_price_in = entry_in 
     
     c3, c4 = st.columns(2)
     tp_in = c3.number_input("TP", value=55000.0, format="%.4f")
     sl_in = c4.number_input("SL", value=48000.0, format="%.4f")
 
-    # --- E. FEE (LOCKING LOGIC) ---
+    # E. FEE (FEE LOCKING LOGIC)
     st.caption("--- Biaya (Fee) ---")
-    disable_fee = (status_input == "🟢 Running")
     
+    disable_fee = (status_input == "🟢 Running")
     if disable_fee:
         st.info("ℹ️ Fee dikunci 0 saat Running.")
         in_trade_fee, in_fund_fee = 0.0, 0.0
@@ -287,7 +346,6 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # TOMBOL EKSEKUSI
     if st.button("➕ Tambah Trade"):
         if entry_in > 0:
             res = process_trade_logic(
@@ -297,7 +355,7 @@ with st.sidebar:
                 in_trade_fee, in_fund_fee
             )
             st.session_state['portfolio'].append(res)
-            st.toast("Trade Ditambahkan!", icon="✅")
+            st.toast("Trade Berhasil Disimpan!", icon="✅")
         else:
             st.error("Entry Price wajib diisi!")
 
@@ -305,34 +363,48 @@ with st.sidebar:
 # 5. DASHBOARD UTAMA
 # ==========================================
 c_head1, c_head2 = st.columns([3, 1])
-c_head1.title("💎 Ultimate Trading V12")
+c_head1.title("💎 Ultimate Trading V14")
 c_head2.metric("Saldo Aset", f"${total_equity:,.2f}")
 st.markdown("---")
 
 if len(st.session_state['portfolio']) > 0:
     df = pd.DataFrame(st.session_state['portfolio'])
     
-    # --- A. STATISTIK KEUANGAN ---
+    # --- A. STATISTIK KEUANGAN & HEALTH BAR ---
     st.subheader("📈 Ringkasan Portofolio")
     
     total_margin = df[df['_is_running'] == True]['Margin'].sum()
     total_floating = df['_float_val'].sum()
     total_realized = df['_real_val'].sum()
     total_fees_usd = df['Total Fee ($)'].sum()
+    
     curr_bal = total_equity + total_realized
     
-    # Health Bar
+    # Health Bar Logic
     usage_pct = (total_margin / curr_bal) * 100 if curr_bal > 0 else 0
-    color = "#00CC96" if usage_pct < 5 else "#FFAA00" if usage_pct < 20 else "#FF4B4B"
-    st.markdown(f"<div style='background:#262730; height:8px; border-radius:4px; width:100%; margin-bottom:15px;'><div style='background:{color}; width:{min(usage_pct, 100)}%; height:100%; border-radius:4px;'></div></div>", unsafe_allow_html=True)
+    
+    # Penentuan Warna Health Bar
+    if usage_pct < 5: 
+        color, msg = "#00CC96", "AMAN"
+    elif usage_pct < 20: 
+        color, msg = "#FFAA00", "MODERATE"
+    else: 
+        color, msg = "#FF4B4B", "BAHAYA"
+    
+    st.markdown(f"""
+        <div style="margin-bottom:5px;">Health Bar: <b style="color:{color}">{msg}</b> ({usage_pct:.1f}%)</div>
+        <div style="background:#262730; height:10px; border-radius:5px; width:100%; margin-bottom:15px;">
+            <div style="background:{color}; width:{min(usage_pct, 100)}%; height:100%; border-radius:5px;"></div>
+        </div>
+    """, unsafe_allow_html=True)
     
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Floating PnL", f"${total_floating:,.2f}", delta_color="normal" if total_floating>=0 else "inverse")
     m2.metric("Kumulatif PnL", f"${total_realized:,.2f}", delta_color="normal" if total_realized>=0 else "inverse")
     m3.metric("Saldo Real", f"${curr_bal:,.2f}")
-    m4.metric("Total Fee", f"-${total_fees_usd:,.2f}")
+    m4.metric("Total Fee Paid", f"-${total_fees_usd:,.2f}")
 
-    # --- B. TABEL MONITORING (FULL COLUMNS V12) ---
+    # --- B. TABEL MONITORING (LENGKAP V12/13/14) ---
     st.markdown("---")
     st.subheader("📋 Tabel Monitoring")
     
@@ -340,7 +412,7 @@ if len(st.session_state['portfolio']) > 0:
     df['Buka'] = df['Start Time'].dt.strftime('%d/%m %H:%M')
     df['Tutup'] = df['End Time'].dt.strftime('%d/%m %H:%M')
     
-    # Kolom Pilihan Lengkap (Termasuk TP/SL % dan Liq Price)
+    # Kolom Pilihan Lengkap
     display_cols = [
         "Pair/Coin", "Status", "Arah", 
         "Buka", "Tutup", "Durasi", 
@@ -359,11 +431,10 @@ if len(st.session_state['portfolio']) > 0:
         height=300
     )
 
-    # --- C. FORM EDIT (MOBILE FRIENDLY & LENGKAP) ---
+    # --- C. FORM EDIT (MOBILE FRIENDLY & FEE MANUAL) ---
     st.markdown("---")
     st.subheader("✏️ Edit Trade")
     
-    # Pilihan Dropdown
     trade_options = df.apply(lambda x: f"{x['Pair/Coin']} ({x['Status']})", axis=1).tolist()
     selected_option = st.selectbox("Pilih Trade:", trade_options)
     
@@ -391,7 +462,7 @@ if len(st.session_state['portfolio']) > 0:
             ns_t = c_t1.time_input("Jam Buka", row['Start Time'].time(), step=60)
             new_start = datetime.combine(ns_d, ns_t)
             
-            # Edit End (Otomatis jika running)
+            # Edit End (Tergantung Status)
             if new_status == "🟢 Running":
                 st.caption("Status Running: Waktu Tutup otomatis 'Sekarang' (Realtime).")
                 new_end = datetime.now()
@@ -405,7 +476,7 @@ if len(st.session_state['portfolio']) > 0:
             st.caption(f"Durasi Baru: {prev_dur}")
             
             # 2. HARGA
-            st.markdown("##### 💵 Harga")
+            st.markdown("##### 💵 Harga & Teknis")
             c_p1, c_p2, c_p3 = st.columns(3)
             
             # Logic Lock Price saat edit
@@ -423,8 +494,8 @@ if len(st.session_state['portfolio']) > 0:
             new_trade_fee = c_f1.number_input("Trading Fee", value=v_t_fee, step=0.1, disabled=is_fee_locked)
             new_fund_fee = c_f2.number_input("Funding Fee", value=v_f_fee, step=0.1, disabled=is_fee_locked)
             
-            # 4. TEKNIS LAIN
-            st.markdown("##### 🎯 Target & Lev")
+            # 4. TP SL
+            st.markdown("##### 🎯 Target")
             c_x1, c_x2, c_x3 = st.columns(3)
             new_tp = c_x1.number_input("TP", value=float(row['TP_Val']), format="%.4f")
             new_sl = c_x2.number_input("SL", value=float(row['SL_Val']), format="%.4f")
