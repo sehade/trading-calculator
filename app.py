@@ -335,8 +335,8 @@ if len(st.session_state['portfolio']) > 0:
     st.markdown("---")
     st.subheader("📋 Tabel Monitoring")
     
-    df['Buka'] = df['Start Time'].dt.strftime('%d/%m %H:%M')
-    df['Tutup'] = df['End Time'].dt.strftime('%d/%m %H:%M')
+    df['Buka'] = df['Start Time'].dt.strftime('%d/%m/%Y %H:%M')
+    df['Tutup'] = df['End Time'].dt.strftime('%d/%m/%Y %H:%M')
     
     # DAFTAR KOLOM KOMPLIT (TP/SL %, Liq, Fee, Waktu)
     display_cols = [
