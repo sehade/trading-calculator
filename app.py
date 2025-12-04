@@ -8,7 +8,7 @@ import uuid
 # 1. KONFIGURASI HALAMAN & CSS SYSTEM
 # ==============================================================================
 st.set_page_config(
-    page_title="Ultimate Trading Manager V18 (FULL COMPLIANCE)",
+    page_title="Sehalized App",  # <-- Ganti dengan: Sehalized / RealHade / Sehade Realized
     page_icon="💎",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -296,9 +296,16 @@ with st.sidebar:
 # ==============================================================================
 # 5. DASHBOARD UTAMA
 # ==============================================================================
+# ==========================================
+# 5. DASHBOARD UTAMA
+# ==========================================
 c_head1, c_head2 = st.columns([3, 1])
-c_head1.title("💎 Ultimate Trading V18")
-c_head2.metric("Saldo Aset", f"${total_equity:,.2f}")
+with c_head1:
+    st.title("💎 Sehalized App") # Judul Pilihan Anda
+    # --- TAMBAHKAN DESKRIPSI DI SINI ---
+    st.markdown("##### *Smart trading management by Sehade. Plan, Track, and Realize your profits*") 
+with c_head2:
+    st.metric("Saldo Aset", f"${total_equity:,.2f}")
 st.markdown("---")
 
 if len(st.session_state['portfolio']) > 0:
